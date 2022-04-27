@@ -5,12 +5,12 @@
 #include <numeric>
 #include <sstream>
 #include <fstream>
-#include "time.h"
 #include <immintrin.h>
+#include <algorithm>
+#include <cstring>
 
 
 using namespace std;
-
 
 typedef unsigned int uint;
 const int maxN = 1e4 +  10; // 最大样本数
@@ -82,41 +82,12 @@ void labelPropagation(
     // 构建 n * n的邻接矩阵
     memset(affinity_matrix,0,sizeof affinity_matrix);
     if(kernel_type == "rbf"){
-        // w_{i,j} = exp(-\frac{|xi - xj|^2}{\alpha^2})
-        /*
-         for(int i = 0; i < num_samples; i ++){
-            for(int j = 0; j < num_samples; j ++){
-                float module[1];
-                for(int k = features - 4; k >= 0; k -=4){
-                    ta = _mm_loadu_ps(MatX[i] + k);
-                    tb = _mm_loadu_ps(MatX[j] + k);
-                    ta = _mm_sub_ps(ta, tb);
-                    res4 = _mm_add_ps(ta,ta);
-                }
-
-                res4 =  _mm_hadd_ps(res4,res4);
-                res4 =  _mm_hadd_ps(res4,res4);
-                _mm_store_ss(module,res4);
-                for(int k = features % 4 - 1; k >= 0; k --){
-                    module[0] += (MatX[i][k] - MatX[j][k]) * (MatX[i][k] - MatX[j][k])
-                }
-                affinity_matrix[i][j] = exp(-(module[0])/(rbf_sigma * rbf_sigma));
-            }
-        }
-         * */
         cout << "todo" << endl;
         exit(1);
     } else{
         for(int i = 0; i < num_samples; i ++){
             // 计算每个点的邻居，为了画图方便，测试案例使用的是二维数据，此处没有使用SIMD加速
             vector<float> squaredDist(num_samples);
-/*            for(int j = 0; j < num_samples; j ++){
-                for(int k = 0; k < 2; k ++){
-                    float residual = MatX[j][k] - MatX[i][k];
-                    squaredDist[j] += residual * residual;
-                }
-            }*/
-            // cache 优化
             float MatX_T[2][num_samples];
             for(int ti = 0; ti < 2; ti ++)
                 for(int tj = 0; tj < num_samples; tj ++){
@@ -150,11 +121,10 @@ void labelPropagation(
             }
             // last
             for(int l = num_samples % 4 - 1; l >= 0; l --){
-                int x = MatX_T[0][l] - MatX[i][0];
-                int y = MatX_T[1][l] - MatX[i][1];
+                float x = MatX_T[0][l] - MatX[i][0];
+                float y = MatX_T[1][l] - MatX[i][1];
                 squaredDist[l] = x * x + y * y;
             }
-
             // 取top k
             auto sortedDistIndices = sort_indexes(squaredDist);
             if(knn_num_neighbors > sortedDistIndices.size()){
@@ -170,28 +140,34 @@ void labelPropagation(
     int iter = 0;
     float pre_label_function[num_samples][num_classes];
     memset(pre_label_function,0.0f,sizeof  pre_label_function);
-    float changed[2] = {0,0};
+    float pre_changed = 0;
+    float cur_changed = 0;
+    float this_change[1] = {0};
     for(int i = 0; i < num_samples; i ++){
         __m128 t_pre,t_cur;
-        __m128 res_change = _mm_setzero_ps();
+        __m128 res_change  = _mm_setzero_ps();
         for(int j = num_classes - 4; j >= 0; j -=4){
             t_pre = _mm_loadu_ps(pre_label_function[i] + j);
             t_cur = _mm_loadu_ps(label_function[i] + j);
-            t_pre = _mm_add_ps(t_pre,t_cur);
-            res_change = _mm_add_ps(res_change, _mm_abs_epi16(t_pre));
+            t_pre = _mm_sub_ps(t_pre,t_cur);
+            // abs
+            __m128 zero = _mm_setzero_ps();
+            zero = _mm_sub_ps(zero,t_pre);
+            t_pre = _mm_max_ps(zero,t_pre);
+            res_change = _mm_add_ps(res_change, t_pre);
         }
         res_change = _mm_hadd_ps(res_change,res_change);
         res_change = _mm_hadd_ps(res_change,res_change);
-        _mm_store_ss(changed + 1, res_change);
-
+        _mm_store_ss(this_change, res_change);
+        cur_changed += this_change[0];
         // 计算剩余的四个元素
         for(int j = num_classes % 4 - 1; j >= 0; --j){
-            changed[1] += abs(pre_label_function[i][j] - label_function[i][j]);
+            cur_changed += abs(pre_label_function[i][j] - label_function[i][j]);
         }
     }
-    while(iter < max_iter && abs(changed[1] - changed[0]) > tol){
+    while(iter < max_iter && abs(pre_changed- cur_changed) > tol){
 
-/*      if(iter % 10 == 0){
+     /* if(iter % 10 == 0){
            cout << "Iteration:" << iter << "/" << max_iter << " changed: " << cur_changed << endl;
        }*/
         memcpy(pre_label_function,label_function,sizeof label_function);
@@ -231,8 +207,8 @@ void labelPropagation(
         memcpy(label_function,clamp_data_label,sizeof clamp_data_label);
 
 
-        changed[0] = changed[1];
-        changed[1] = 0;
+        pre_changed = cur_changed;
+        cur_changed = 0;
         //计算changed，矩阵相减 求绝对值 然后相加
         for(int i = 0; i < num_samples; i ++){
             __m128 t_pre,t_cur;
@@ -240,16 +216,20 @@ void labelPropagation(
             for(int j = num_classes - 4; j >= 0; j -=4){
                 t_pre = _mm_loadu_ps(pre_label_function[i] + j);
                 t_cur = _mm_loadu_ps(label_function[i] + j);
-                t_pre = _mm_add_ps(t_pre,t_cur);
-                res_change = _mm_add_ps(res_change, _mm_abs_epi16(t_pre));
+                t_pre = _mm_sub_ps(t_pre,t_cur);
+                __m128 zero = _mm_setzero_ps();
+                zero = _mm_sub_ps(zero,t_pre);
+                t_pre = _mm_max_ps(zero,t_pre);
+
+                res_change = _mm_add_ps(res_change, t_pre);
             }
             res_change = _mm_hadd_ps(res_change,res_change);
             res_change = _mm_hadd_ps(res_change,res_change);
-            _mm_store_ss(changed + 1, res_change);
-
+            _mm_store_ss(this_change, res_change);
+            cur_changed += this_change[0];
             // 计算剩余的四个元素
             for(int j = num_classes % 4 - 1; j >= 0; --j){
-                changed[1] += abs(pre_label_function[i][j] - label_function[i][j]);
+                cur_changed += abs(pre_label_function[i][j] - label_function[i][j]);
             }
         }
     }
@@ -312,6 +292,7 @@ void write_test_data(string &filename,int labels[maxN],int unlabel_num){
 
 
 
+
 int main() {
     float Mat_Unlabel[maxN][2];
     float Mat_Label[maxF][2];
@@ -320,30 +301,32 @@ int main() {
     int labels[8] = {0,1,2,3,4,5,6,7};
     int test_scale[11] = {128,256,512,1024,2048,3072,4096,5120,6144,7168,8192};
     string kernel_type = "knn";
-    for(auto num: test_scale){
-        string mat_unlabel_csv = "Mat_Unlabel_" + to_string(num) + ".csv";
-        string mat_label_csv = "Mat_Label_" + to_string(num) + ".csv";
-        int num_un_label = read_test_data(mat_unlabel_csv, Mat_Unlabel);
-        int num_label = read_test_data(mat_label_csv, Mat_Label);
-        //cout << "read label data:" << num_label << "unlabel data:" << num_un_label << endl;
-        auto ls = clock();
-        labelPropagation(
-                Mat_Label,
-                Mat_Unlabel,
-                labels,
-                unlabel_data_labels,
-                num_label,
-                num_un_label,
-                kernel_type,
-                1.5,
-                10,
-                1000,
-                0.005);
-        auto le = clock();
-        cout << "数据量为i:"<< num << ";运行时长:" << (double )(le - ls) / CLOCKS_PER_SEC << endl;
-        string labels_csv = "test_data_res_" + to_string(num) + ".csv";
-        write_test_data(labels_csv,unlabel_data_labels,num);
+  for(auto num: test_scale){
+      string mat_unlabel_csv = "Mat_Unlabel_" + to_string(num) + ".csv";
+      string mat_label_csv = "Mat_Label_" + to_string(num) + ".csv";
+      int num_un_label = read_test_data(mat_unlabel_csv, Mat_Unlabel);
+      int num_label = read_test_data(mat_label_csv, Mat_Label);
+     //cout << "read label data:" << num_label << "unlabel data:" << num_un_label << endl;
+      auto ls = clock();
+      labelPropagation(
+              Mat_Label,
+              Mat_Unlabel,
+              labels,
+              unlabel_data_labels,
+              num_label,
+              num_un_label,
+              kernel_type,
+              1.5,
+              10,
+              1000,
+              0.005);
+      auto le = clock();
+      cout << "数据量为i:"<< num << ";运行时长:" << (double )(le - ls) / CLOCKS_PER_SEC << endl;
+      string labels_csv = "test_data_res_" + to_string(num) + ".csv";
+      write_test_data(labels_csv,unlabel_data_labels,num);
+
     }
+
     return 0;
 }
 

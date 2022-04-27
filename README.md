@@ -6,3 +6,6 @@
 * scripy.py:生成测试数据和画图脚本
 
 
+> SSE.cpp编译时，在makefile添加 `set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")`
+
+
