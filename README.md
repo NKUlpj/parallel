@@ -9,7 +9,11 @@
 
 
 > SSE.cpp编译时，在makefile添加 `set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")`
+<<<<<<< HEAD
 
+=======
+> 
+>>>>>>> a30c517109f2b321bb60033013f084b79d470b48
 > openMP编译时，请在makefile添加
 ```
 find_package(OpenMP)
