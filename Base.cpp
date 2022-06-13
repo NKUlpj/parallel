@@ -7,6 +7,8 @@
 #include <fstream>
 #include "time.h"
 #include <arm_neon.h>
+#include <cstring>
+#include <algorithm>
 
 
 using namespace std;
@@ -16,6 +18,22 @@ typedef unsigned int uint;
 const int maxN = 1e4 +  10; // 最大样本数
 const int maxF = 10;  // 最大特征数
 float affinity_matrix[maxN][maxN];
+
+
+
+
+template <typename T>
+vector<size_t> sort_indexes(const vector<T> &v) {
+    // 初始化索引向量
+    vector<size_t> idx(v.size());
+    //使用iota对向量赋0~？的连续值
+    iota(idx.begin(), idx.end(), 0);
+    // 通过比较v的值对索引idx进行排序
+    sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] < v[i2]; });
+    return idx;
+}
+
+
 //数据是二维数据
 void labelPropagation(
         float Mat_Label[maxF][2],
@@ -133,8 +151,8 @@ void labelPropagation(
 /*      if(iter % 10 == 0){
            cout << "Iteration:" << iter << "/" << max_iter << " changed: " << cur_changed << endl;
        }*/
-       memcpy(pre_label_function,label_function,sizeof label_function);
-       iter += 1;
+        memcpy(pre_label_function,label_function,sizeof label_function);
+        iter += 1;
 
         float tmp[num_samples][num_classes];
         for(int i = 0; i < num_samples; i ++){
@@ -151,7 +169,7 @@ void labelPropagation(
 
         pre_changed = cur_changed;
         cur_changed = 0;
-       for(int i = 0; i < num_samples; i ++){
+        for(int i = 0; i < num_samples; i ++){
             for(int j = 0; j < num_classes; j ++){
                 cur_changed += abs(pre_label_function[i][j] - label_function[i][j]);
             }
@@ -249,4 +267,3 @@ int main() {
     }
     return 0;
 }
-
