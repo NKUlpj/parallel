@@ -6,6 +6,7 @@
 * openMP_v1.cpp: openMP并行
 * openMP_v2.cpp: 考虑线程创建与销毁
 * cuda_v1.cu: 使用CUDA实现任意形状的矩阵乘法和带有规约操作的矩阵减法
+* final.cpp: 标签传播最终实现
 
 
 > SSE.cpp编译时，在makefile添加 `set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")`
