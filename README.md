@@ -1,4 +1,6 @@
-# parallel
+# 南开大学研究生课程《并行计算》课程作业
+
+
 * Base.cpp:基础代码
 * SIMD.cpp:neon
 * SSE.cpp:SSE指令集
